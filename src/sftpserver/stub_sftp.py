@@ -27,21 +27,24 @@ import time
 from calendar import c
 from datetime import datetime
 from importlib.resources import path
-from typing import Any
 
+import requests
 from boto.exception import S3CreateError, S3ResponseError
 from boto.s3.bucketlistresultset import BucketListResultSet
 from helper.debug import function_debuger, function_debuger_with_resule
 from helper.logger import logger
 from paramiko import (
-    AUTH_SUCCESSFUL,
-    OPEN_SUCCEEDED,
-    SFTP_OK,
     ServerInterface,
     SFTPAttributes,
     SFTPHandle,
     SFTPServer,
     SFTPServerInterface,
+)
+from paramiko.common import (
+    AUTH_FAILED,
+    AUTH_PARTIALLY_SUCCESSFUL,
+    AUTH_SUCCESSFUL,
+    OPEN_SUCCEEDED,
 )
 from paramiko.sftp import SFTP_OK
 
@@ -64,15 +67,32 @@ def asciify(string):
 
 
 class StubServer(ServerInterface):
-    @function_debuger
-    def check_auth_password(self, username, password):
-        # all are allowed
-        return AUTH_SUCCESSFUL
+    AUTH_SERVER_URI = settings.AUTH_SERVER_URI
+    AUTH_URL = settings.AUTH_URL
 
     @function_debuger
+    def check_auth_none(self, username):
+        return AUTH_FAILED
+
+    @function_debuger(print_input=True)
+    def check_auth_password(self, username, password):
+        resp = requests.post(
+            self.AUTH_URL, json={"username": username, "password": password}
+        )
+        if resp.status_code == 200:
+            return AUTH_SUCCESSFUL
+        else:
+            return AUTH_FAILED
+
+    @function_debuger(print_input=True)
     def check_auth_publickey(self, username, key):
-        # all are allowed
-        return AUTH_SUCCESSFUL
+        resp = requests.post(
+            self.AUTH_URL, json={"username": username, "key": str(key)}
+        )
+        if resp.status_code == 200:
+            return AUTH_SUCCESSFUL
+        else:
+            return AUTH_FAILED
 
     @function_debuger
     def check_channel_request(self, kind, chanid):
@@ -81,7 +101,7 @@ class StubServer(ServerInterface):
     @function_debuger
     def get_allowed_auths(self, username):
         """List availble auth mechanisms."""
-        return "password,publickey"
+        return "none,password,publickey"
 
 
 class StubSFTPHandle(SFTPHandle):
